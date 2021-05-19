@@ -1,4 +1,9 @@
 *.mat
+*.asv
 *.pyc
 *.p
+*.pdf
 job_rerun_stuff
+!pano.mat
+!colorbrewer.mat
+!fly.mat
