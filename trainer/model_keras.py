@@ -20,7 +20,70 @@ def mult_by_noise(input_tensor, noise_std):
         return mult_noise(input_tensor)
     else:
         return input_tensor
+        
+def ln_model(input_shape, filter_shape=(30, 3), num_filter=4, output_noise_std=None, predict_direction = False):
 
+    image_in = Input(input_shape)
+
+    num_free_filters = num_filter
+
+    pad_x = int((filter_shape[1] - 1))
+    pad_t = int((filter_shape[0] - 1))
+
+    #An LN model maps nicely no a Conv2D. First we define the output of a single arm
+    input_conv = Conv2D(num_free_filters, filter_shape, name='conv1', activation='relu')
+    conv1 = input_conv(image_in)
+
+    #Add output noise
+    noised_conv1 = mult_by_noise(conv1, output_noise_std)
+
+    # Velocity estimate is the weighted sum of the LN model outputs
+    # If we want to just the direction of the motion, we add a sigmoid nonlinearity
+    final_activation = 'sigmoid' if predict_direction else None
+    combine_filters = Conv2D(1, (1, 1), name='conv2', activation=final_activation,
+                             use_bias=False)(noised_conv1)
+
+    # Create model
+    model = Model(inputs=image_in, outputs=combine_filters, name='ln_model_flip')
+
+    return model, pad_x, pad_t
+
+def ln_tanh_model_flip(input_shape, filter_shape=(30, 3), num_filter=4, output_noise_std=None, predict_direction = False):
+
+    image_in = Input(input_shape)
+
+    assert (np.mod(num_filter, 2) == 0)
+    num_free_filters = int(num_filter / 2) #For each freely parameterized filter there is a reversed filter
+
+    pad_x = int((filter_shape[1] - 1))
+    pad_t = int((filter_shape[0] - 1))
+
+    #An LN model maps nicely no a Conv2D. First we define the output of a single arm
+    input_conv = Conv2D(num_free_filters, filter_shape, name='conv1', activation='tanh')
+    conv1 = input_conv(image_in)+1
+
+    #Now we define the output of paired, revered filters. To do this, we do a flip(convolve(flip(input))) operation
+    reverseLayer2 = Lambda(lambda x: K.reverse(x, axes=2))
+    reversedInput = reverseLayer2(image_in)
+    conv2 = reverseLayer2(input_conv(reversedInput))+1
+
+    #Add output noise
+    noised_conv1 = mult_by_noise(conv1, output_noise_std)
+    noised_conv2 = mult_by_noise(conv2, output_noise_std)
+
+    #Subtract the filter pairs
+    subtracted_layer = subtract([noised_conv1, noised_conv2])
+
+    # Velocity estimate is the weighted sum of the LN model outputs
+    # If we want to just the direction of the motion, we add a sigmoid nonlinearity
+    final_activation = 'sigmoid' if predict_direction else None
+    combine_filters = Conv2D(1, (1, 1), name='conv2', activation=final_activation,
+                             use_bias=False)(subtracted_layer)
+
+    # Create model
+    model = Model(inputs=image_in, outputs=combine_filters, name='ln_model_flip')
+
+    return model, pad_x, pad_t
 
 def ln_model_flip(input_shape, filter_shape=(30, 3), num_filter=4, output_noise_std=None, predict_direction = False):
 
